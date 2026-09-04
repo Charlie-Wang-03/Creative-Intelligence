@@ -180,6 +180,8 @@ class MoonshineRunnerIntegrationTestCase(unittest.TestCase):
         return job, state, object_job, state["objects"][0]
 
     def _configured_app(self, home, main_provider=None):
+        home = Path(home)
+        run_archive.sync_skills(home)
         app = MoonshineApp(home=str(home))
         main_provider = main_provider or ScriptedArchiveProvider()
         verification_provider = PassingVerificationProvider()
@@ -220,6 +222,8 @@ class MoonshineRunnerIntegrationTestCase(unittest.TestCase):
         self.assertGreaterEqual(len(main_provider.calls), 2)
         self.assertEqual(len(verification_provider.calls), 1)
         self.assertIn(run_archive.VERIFICATION_TOOL, main_provider.calls[0]["tool_schema_names"])
+        for slug in run_archive.EXPOSED_SKILLS:
+            self.assertIsNotNone(app.skill_manager.get_skill(slug))
 
         tool_events = run_archive._verification_events(app, item_state["session_id"])
         self.assertEqual(len(tool_events), 1)
