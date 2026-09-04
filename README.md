@@ -32,7 +32,9 @@ Place this repository directly inside the initialized Moonshine runtime home, no
     ├── README.md
     ├── run_archive.py
     ├── archive-format-specification.md
-    ├── skills/                           
+    ├── tests/
+    │   └── test_run_archive_offline.py
+    ├── skills/
     │   ├── math-object-origin-archive/
     │   │   └── SKILL.md
     │   └── verify-math-object-origin-archive/
@@ -107,3 +109,15 @@ The following directories are created automatically when the runner is used and 
 
 - Final archives: `Creative-Intelligence/archives/<input-name>/`
 - Queue state and project/session associations: `Creative-Intelligence/runs/<input-name>.state.json`
+
+## Offline regression tests
+
+The deterministic runner contracts can be tested from a standalone checkout without an initialized Moonshine runtime, provider credentials, network access, or model calls. The test harness uses only the Python standard library and provides import-time stubs for the narrow Moonshine symbols required to load `run_archive.py`.
+
+Run from the `Creative-Intelligence` repository root:
+
+```bash
+python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+These tests cover runner-owned deterministic behavior such as queue validation, immutable queue state, format-placeholder checks, verifier-output integrity, archive overwrite protection, and provider preflight logic. They do **not** simulate Moonshine agent execution, session storage, MCP tools, or real verification-provider behavior; those remain runtime integration concerns.
