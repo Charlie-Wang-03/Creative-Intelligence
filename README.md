@@ -32,7 +32,7 @@ Place this repository directly inside the initialized Moonshine runtime home, no
     ├── README.md
     ├── run_archive.py
     ├── archive-format-specification.md
-    ├── skills/                            # Source copies distributed with this repository
+    ├── skills/                           
     │   ├── math-object-origin-archive/
     │   │   └── SKILL.md
     │   └── verify-math-object-origin-archive/
