@@ -291,6 +291,41 @@ class MoonshineRunnerIntegrationTestCase(unittest.TestCase):
         self.assertEqual(meta.get("project_slug"), "different-project")
         self.assertFalse(object_job.archive_path.exists())
 
+    def test_resume_rejects_same_project_session_with_wrong_mode(self):
+        _, _, object_job, item_state = self._job()
+        app = MoonshineApp(home=str(self.root / "moonshine-home"))
+        wrong_state = app.start_shell_state(
+            mode="research",
+            project_slug=object_job.project_slug,
+            agent_slug="research-control-loop",
+        )
+        item_state["session_id"] = wrong_state.session_id
+
+        with self.assertRaisesRegex(run_archive.RunnerError, "mode=research, not chat"):
+            run_archive._open_or_create_session(app, object_job, item_state)
+
+        meta = app.session_store.get_session_meta(wrong_state.session_id)
+        self.assertEqual(meta.get("mode"), "research")
+        self.assertEqual(meta.get("project_slug"), object_job.project_slug)
+
+    def test_resume_rejects_same_project_session_with_wrong_agent(self):
+        _, _, object_job, item_state = self._job()
+        app = MoonshineApp(home=str(self.root / "moonshine-home"))
+        wrong_state = app.start_shell_state(
+            mode="chat",
+            project_slug=object_job.project_slug,
+            agent_slug="research-control-loop",
+        )
+        item_state["session_id"] = wrong_state.session_id
+
+        with self.assertRaisesRegex(run_archive.RunnerError, "agent=research-control-loop, not %s" % run_archive.AGENT_SLUG):
+            run_archive._open_or_create_session(app, object_job, item_state)
+
+        meta = app.session_store.get_session_meta(wrong_state.session_id)
+        self.assertEqual(meta.get("mode"), "chat")
+        self.assertEqual(meta.get("agent_slug"), "research-control-loop")
+        self.assertEqual(meta.get("project_slug"), object_job.project_slug)
+
 
 if __name__ == "__main__":
     unittest.main()
