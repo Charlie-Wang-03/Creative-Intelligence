@@ -202,6 +202,39 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _material_fingerprints(materials: Sequence[Path]) -> List[Dict[str, str]]:
+    """Return the immutable path/content identity for local source materials."""
+    return [
+        {
+            "path": str(path),
+            "sha256": _sha256_file(path),
+        }
+        for path in materials
+    ]
+
+
+def _validate_material_fingerprints(object_job: ObjectJob, row: Dict[str, object]) -> None:
+    """Reject resume when effective material inputs differ from the persisted run."""
+    expected = _material_fingerprints(object_job.materials)
+    stored = row.get("material_fingerprints")
+    if stored is None:
+        if expected:
+            raise RunnerError(
+                "state lacks material fingerprints for %s; cannot safely resume this material-backed run; "
+                "use a new input filename" % object_job.name
+            )
+        return
+    if not isinstance(stored, list) or len(stored) != len(expected):
+        raise RunnerError("state material association is inconsistent for %s" % object_job.name)
+    for stored_item, expected_item in zip(stored, expected):
+        if not isinstance(stored_item, dict):
+            raise RunnerError("state material fingerprints are invalid for %s" % object_job.name)
+        if str(stored_item.get("path") or "") != expected_item["path"]:
+            raise RunnerError("state material association is inconsistent for %s" % object_job.name)
+        if str(stored_item.get("sha256") or "") != expected_item["sha256"]:
+            raise RunnerError("material content changed after this run started: %s" % expected_item["path"])
+
+
 def _dedupe(items: Iterable[object]) -> List[str]:
     seen = set()
     result: List[str] = []
@@ -341,6 +374,7 @@ def _new_state(job: JobFile) -> Dict[str, object]:
                 "session_id": "",
                 "archive": str(item.archive_path),
                 "archive_sha256": "",
+                "material_fingerprints": _material_fingerprints(item.materials),
                 "verification_submissions": 0,
                 "last_error": "",
             }
@@ -383,6 +417,7 @@ def load_or_create_state(job: JobFile) -> Dict[str, object]:
             raise RunnerError("state project association is inconsistent for %s" % item.name)
         if str(row.get("archive") or "") != str(item.archive_path):
             raise RunnerError("state archive association is inconsistent for %s" % item.name)
+        _validate_material_fingerprints(item, row)
     return state
 
 
@@ -795,6 +830,7 @@ def _session_metadata(
         "language": job.language,
         "output_path": str(object_job.archive_path),
         "source_materials": [str(path) for path in object_job.materials],
+        "source_material_fingerprints": list(item_state.get("material_fingerprints") or []),
         "runtime_materials": [str(item.get("runtime_path") or "") for item in staged_materials],
         "status": status,
         "archive_sha256": str(item_state.get("archive_sha256") or ""),
@@ -847,6 +883,7 @@ def process_object(
     verbose: bool,
 ) -> None:
     """Run or resume exactly one queue item until accepted or exhausted."""
+    _validate_material_fingerprints(object_job, item_state)
     shell_state = _open_or_create_session(app, object_job, item_state)
     item_state["status"] = "running"
     item_state["session_id"] = shell_state.session_id
