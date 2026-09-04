@@ -36,7 +36,7 @@ class MaterialProvenanceRegressionTests(unittest.TestCase):
         self.runner.TASK_DIR = self.task_dir
         self.addCleanup(setattr, self.runner, "TASK_DIR", self._original_task_dir)
 
-    def test_state_rejects_material_content_mutation_after_run_started(self):
+    def _material_job(self):
         inputs = self.temp_root / "inputs"
         inputs.mkdir()
         material = inputs / "notes.md"
@@ -60,7 +60,30 @@ class MaterialProvenanceRegressionTests(unittest.TestCase):
             + "\n",
             encoding="utf-8",
         )
+        return material, queue_path
 
+    def test_new_state_records_resolved_material_path_and_sha256(self):
+        material, queue_path = self._material_job()
+        job = self.runner.load_job(queue_path)
+
+        state = self.runner.load_or_create_state(job)
+
+        self.assertEqual(
+            state["objects"][0]["material_fingerprints"],
+            [
+                {
+                    "path": str(material.resolve()),
+                    "sha256": self.runner._sha256_file(material),
+                }
+            ],
+        )
+        self.assertEqual(
+            self.runner.load_or_create_state(self.runner.load_job(queue_path)),
+            state,
+        )
+
+    def test_state_rejects_material_content_mutation_after_run_started(self):
+        material, queue_path = self._material_job()
         first_job = self.runner.load_job(queue_path)
         state = self.runner.load_or_create_state(first_job)
         self.assertEqual(state["status"], "pending")
@@ -74,6 +97,19 @@ class MaterialProvenanceRegressionTests(unittest.TestCase):
             "material content changed after this run started",
         ):
             self.runner.load_or_create_state(resumed_job)
+
+    def test_material_backed_legacy_state_without_fingerprint_fails_closed(self):
+        _, queue_path = self._material_job()
+        job = self.runner.load_job(queue_path)
+        state = self.runner.load_or_create_state(job)
+        state["objects"][0].pop("material_fingerprints")
+        harness._stub_write_json(job.state_path, state)
+
+        with self.assertRaisesRegex(
+            self.runner.RunnerError,
+            "state lacks material fingerprints",
+        ):
+            self.runner.load_or_create_state(self.runner.load_job(queue_path))
 
 
 if __name__ == "__main__":
