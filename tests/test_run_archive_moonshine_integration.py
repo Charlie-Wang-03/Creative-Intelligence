@@ -190,6 +190,7 @@ class MoonshineRunnerIntegrationTestCase(unittest.TestCase):
         app.context_manager.provider = main_provider
         app.memory.set_provider(main_provider)
         app.research_project_resolver.provider = main_provider
+        run_archive.configure_task_exposure(app)
         return app, main_provider, verification_provider
 
     def _process(self, app, job, state, object_job, item_state):
@@ -218,6 +219,7 @@ class MoonshineRunnerIntegrationTestCase(unittest.TestCase):
         self.assertTrue(item_state["session_id"])
         self.assertGreaterEqual(len(main_provider.calls), 2)
         self.assertEqual(len(verification_provider.calls), 1)
+        self.assertIn(run_archive.VERIFICATION_TOOL, main_provider.calls[0]["tool_schema_names"])
 
         tool_events = run_archive._verification_events(app, item_state["session_id"])
         self.assertEqual(len(tool_events), 1)
