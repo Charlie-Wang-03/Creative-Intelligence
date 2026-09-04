@@ -7,6 +7,8 @@ on:
   pull_request:
     paths:
       - "run_archive.py"
+      - "archive-format-specification.md"
+      - "skills/**"
       - "tests/test_run_archive_moonshine_integration.py"
       - ".github/workflows/moonshine-integration-tests.yml"
 
