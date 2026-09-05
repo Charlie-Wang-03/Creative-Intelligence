@@ -2,14 +2,18 @@ name: Moonshine runtime integration tests
 
 on:
   push:
-    branches:
-      - test/runner-moonshine-integration
+    paths:
+      - "run_archive.py"
+      - "archive-format-specification.md"
+      - "skills/**"
+      - "tests/integration_run_archive_moonshine.py"
+      - ".github/workflows/moonshine-integration-tests.yml"
   pull_request:
     paths:
       - "run_archive.py"
       - "archive-format-specification.md"
       - "skills/**"
-      - "tests/test_run_archive_moonshine_integration.py"
+      - "tests/integration_run_archive_moonshine.py"
       - ".github/workflows/moonshine-integration-tests.yml"
 
 permissions:
@@ -38,4 +42,4 @@ jobs:
           python -m pip install --no-deps "git+https://github.com/DeepMathLLM/Moonshine.git@${MOONSHINE_COMMIT}"
 
       - name: Run deterministic Moonshine integration tests
-        run: python -m unittest -v tests.test_run_archive_moonshine_integration
+        run: python -m unittest -v tests.integration_run_archive_moonshine
