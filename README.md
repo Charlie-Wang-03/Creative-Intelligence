@@ -2,10 +2,6 @@
 
 This project explores mathematical creativity in AI—whether it can move beyond solving existing problems to originate new ideas and expand the frontiers of mathematics alongside humans.
 
-## Preliminary Results
-
-The first stage produced 114 mathematical-object origin archives covering algebra, analysis, geometry, topology, probability, number theory, and related areas. [Browse the preliminary archive collection](https://github.com/DeepMathLLM/Creative-Intelligence/tree/main/preliminary-archive-results).
-
 ## Current Focus
 
 1. **Tracing the Origins of Mathematical Concepts**
@@ -13,6 +9,10 @@ The first stage produced 114 mathematical-object origin archives covering algebr
 
 2. **Exploring Mathematical Creativity in AI**
    Use frontier AI models to investigate whether they can move beyond solving existing problems and demonstrate genuine mathematical creativity, including the ability to generate new concepts, perspectives, and approaches.
+
+## Preliminary Results
+
+The first stage produced 114 mathematical-object origin archives covering algebra, analysis, geometry, topology, probability, number theory, and related areas. [Browse the preliminary archive collection](https://github.com/DeepMathLLM/Creative-Intelligence/tree/main/preliminary-archive-results).
 
 ## Mathematical Object Origin Archive Runner
 
