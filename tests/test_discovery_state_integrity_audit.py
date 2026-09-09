@@ -1,17 +1,44 @@
-"""Audit-only negative controls for branch-discovery state integrity.
+"""Negative controls for branch-discovery lifecycle integrity.
 
-These tests intentionally encode fail-closed contracts that current runner v2
-does not yet satisfy.  The branch is for scouting/reproduction only; no
-production fix is included here.
+These tests intentionally encode fail-closed contracts that runner v2 does not
+yet fully satisfy.  They establish deterministic red evidence before the
+production implementation is added on a separate clean branch.
 """
 
 from __future__ import annotations
 
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
 from tests.test_run_archive_offline import _load_runner_module, _stub_write_json
+
+
+PASS_REVIEW = {
+    "mathematical": {"verdict": "pass", "issues": [], "rationale": "fixture"},
+    "historical": {"verdict": "pass", "issues": [], "rationale": "fixture"},
+    "format": {"verdict": "pass", "issues": [], "rationale": "fixture"},
+    "repair_targets": [],
+    "summary": "fixture passed",
+}
+
+
+class _VerificationProvider:
+    def __init__(self):
+        self.calls = 0
+
+    def generate_structured(self, **_kwargs):
+        self.calls += 1
+        return PASS_REVIEW
+
+
+class _Registry:
+    def __init__(self):
+        self.definition = None
+
+    def register(self, definition):
+        self.definition = definition
 
 
 class DiscoveryStateIntegrityAuditTests(unittest.TestCase):
@@ -62,35 +89,156 @@ class DiscoveryStateIntegrityAuditTests(unittest.TestCase):
             "last_error": "",
         }
 
+    def _persist_state(self, job, rows):
+        state = self.runner.load_or_create_state(job)
+        state["objects"] = rows
+        _stub_write_json(job.state_path, state)
+        return state
+
+    def _register_verifier(self, *, discovery=True):
+        registry = _Registry()
+        app = types.SimpleNamespace(tool_registry=registry)
+        shell_state = self.runner.ShellState(
+            mode="chat",
+            project_slug="discovery-project",
+            session_id="discovery-session",
+            agent_slug=self.runner.AGENT_SLUG,
+        )
+        object_job = self.runner.ObjectJob(
+            index=1,
+            name="" if discovery else "Yoneda lemma",
+            materials=(),
+            project_slug=shell_state.project_slug,
+            archive_path=self.task_dir / "pending.md",
+            branch="" if discovery else "Category Theory",
+        )
+        self.runner.register_verification_tool(
+            app,
+            object_job=object_job,
+            shell_state=shell_state,
+            format_specification="No fenced placeholders.",
+            material_context="(none)",
+            discovery_branches=["Category Theory"] if discovery else (),
+        )
+        self.assertIsNotNone(registry.definition)
+        return registry.definition.handler, shell_state
+
+    def _write_attempt_history(self, name, status):
+        path = self.task_dir / "runs" / ("history-%s.state.json" % status)
+        _stub_write_json(
+            path,
+            {
+                "schema_version": self.runner.STATE_SCHEMA_VERSION,
+                "objects": [{"name": name, "status": status}],
+            },
+        )
+
     def test_discovery_state_rejects_unknown_row_status(self):
         job = self._job(target_archives=1)
-        state = self.runner.load_or_create_state(job)
-        state["objects"] = [self._row(job, 1, "Yoneda lemma", status="corrupted")]
-        _stub_write_json(job.state_path, state)
+        self._persist_state(job, [self._row(job, 1, "Yoneda lemma", status="corrupted")])
 
         with self.assertRaisesRegex(self.runner.RunnerError, "unknown.*status|invalid.*status"):
             self.runner.load_or_create_state(job)
 
     def test_discovery_state_rejects_case_insensitive_duplicate_object_names(self):
         job = self._job(target_archives=2)
-        state = self.runner.load_or_create_state(job)
-        state["objects"] = [
-            self._row(job, 1, "Yoneda lemma", status="failed"),
-            self._row(job, 2, "yoneda LEMMA", status="verified"),
-        ]
-        _stub_write_json(job.state_path, state)
+        self._persist_state(
+            job,
+            [
+                self._row(job, 1, "Yoneda lemma", status="failed"),
+                self._row(job, 2, "yoneda LEMMA", status="verified"),
+            ],
+        )
 
         with self.assertRaisesRegex(self.runner.RunnerError, "duplicate.*object|duplicate.*name"):
             self.runner.load_or_create_state(job)
 
     def test_discovery_state_rejects_missing_verified_archive(self):
         job = self._job(target_archives=1)
-        state = self.runner.load_or_create_state(job)
-        state["objects"] = [self._row(job, 1, "Yoneda lemma", status="verified")]
-        _stub_write_json(job.state_path, state)
+        self._persist_state(job, [self._row(job, 1, "Yoneda lemma", status="verified")])
 
-        with self.assertRaisesRegex(self.runner.RunnerError, "verified.*archive|archive.*missing"):
+        with self.assertRaisesRegex(self.runner.RunnerError, "verified.*archive|archive.*missing|intact"):
             self.runner.load_or_create_state(job)
+
+    def test_discovery_state_rejects_tampered_verified_archive(self):
+        job = self._job(target_archives=1)
+        row = self._row(job, 1, "Yoneda lemma", status="verified")
+        archive = Path(row["archive"])
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        archive.write_text("tampered\n", encoding="utf-8")
+        self._persist_state(job, [row])
+
+        with self.assertRaisesRegex(self.runner.RunnerError, "verified.*changed|hash|integrity"):
+            self.runner.load_or_create_state(job)
+
+    def test_discovery_state_accepts_intact_verified_archive(self):
+        job = self._job(target_archives=1)
+        row = self._row(job, 1, "Yoneda lemma", status="verified")
+        archive = Path(row["archive"])
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        archive.write_text("fixture-1\n", encoding="utf-8")
+        self._persist_state(job, [row])
+
+        loaded = self.runner.load_or_create_state(job)
+        self.assertEqual(loaded["objects"][0]["status"], "verified")
+
+    def test_discovery_verifier_rejects_previously_attempted_exact_name(self):
+        for prior_status in ("verified", "failed"):
+            with self.subTest(prior_status=prior_status):
+                self._write_attempt_history("Yoneda lemma", prior_status)
+                handler, shell_state = self._register_verifier(discovery=True)
+                provider = _VerificationProvider()
+                runtime = {
+                    "project_slug": shell_state.project_slug,
+                    "session_id": shell_state.session_id,
+                    "verification_provider": provider,
+                }
+                with self.assertRaisesRegex(
+                    self.runner.RunnerError,
+                    "already attempted|duplicate|previously attempted",
+                ):
+                    handler(
+                        runtime,
+                        archive="# Archive | yoneda LEMMA\n\nfixture",
+                        object_name="yoneda LEMMA",
+                        branch="Category Theory",
+                    )
+                self.assertEqual(provider.calls, 0)
+
+    def test_discovery_verifier_allows_unattempted_name(self):
+        self._write_attempt_history("Yoneda lemma", "verified")
+        handler, shell_state = self._register_verifier(discovery=True)
+        provider = _VerificationProvider()
+        runtime = {
+            "project_slug": shell_state.project_slug,
+            "session_id": shell_state.session_id,
+            "verification_provider": provider,
+        }
+
+        result = handler(
+            runtime,
+            archive="# Archive | Kan extension\n\nfixture",
+            object_name="Kan extension",
+            branch="Category Theory",
+        )
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(provider.calls, 1)
+
+    def test_non_discovery_verifier_keeps_existing_failed_repair_path_available(self):
+        self._write_attempt_history("Yoneda lemma", "failed")
+        handler, shell_state = self._register_verifier(discovery=False)
+        provider = _VerificationProvider()
+        runtime = {
+            "project_slug": shell_state.project_slug,
+            "session_id": shell_state.session_id,
+            "verification_provider": provider,
+        }
+
+        result = handler(runtime, archive="# Archive | Yoneda lemma\n\nfixture")
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(provider.calls, 1)
 
 
 if __name__ == "__main__":
