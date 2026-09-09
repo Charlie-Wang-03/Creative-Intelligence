@@ -102,6 +102,11 @@ Mathematical branches:
 Previously attempted mathematical objects:
 {attempted_names}
 
+Candidate concept references:
+{concept_references}
+
+{selection_policy}
+
 Archive format specification:
 --- FORMAT BEGIN ---
 {format_specification}
@@ -227,6 +232,7 @@ class JobFile:
     mode: str = "queue"
     branches: Tuple[str, ...] = ()
     target_archives: int = 0
+    concept_references: Tuple[Tuple[str, str], ...] = ()
 
 
 def _sha256_text(text: str) -> str:
@@ -396,11 +402,45 @@ def load_job(job_path: Path) -> JobFile:
     )
 
 
+def load_concept_references(path: Path) -> Tuple[Tuple[str, str], ...]:
+    """Load optional discovery suggestions from a UTF-8 JSON array."""
+    resolved = path.expanduser().resolve()
+    if not resolved.exists() or not resolved.is_file():
+        raise RunnerError("concept reference JSON does not exist: %s" % resolved)
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except UnicodeDecodeError as exc:
+        raise RunnerError("concept reference JSON must use UTF-8 encoding: %s" % resolved) from exc
+    except ValueError as exc:
+        raise RunnerError("invalid concept reference JSON in %s: %s" % (resolved, exc)) from exc
+    if not isinstance(payload, list) or not payload:
+        raise RunnerError("concept reference JSON must be a non-empty array")
+
+    references: List[Tuple[str, str]] = []
+    seen_names = set()
+    for index, item in enumerate(payload):
+        if not isinstance(item, dict):
+            raise RunnerError("concept references[%s] must be an object" % index)
+        name = str(item.get("name") or "").strip()
+        if not name:
+            raise RunnerError("concept references[%s].name is required" % index)
+        normalized = name.casefold()
+        if normalized in seen_names:
+            raise RunnerError("duplicate concept reference name: %s" % name)
+        seen_names.add(normalized)
+        source_value = item.get("source", "")
+        if source_value is not None and not isinstance(source_value, str):
+            raise RunnerError("concept references[%s].source must be a string" % index)
+        references.append((name, str(source_value or "").strip()))
+    return tuple(references)
+
+
 def build_discovery_job(
     raw_branches: Sequence[str],
     *,
     target_archives: int,
     run_name: str = "",
+    concept_reference_path: Optional[Path] = None,
 ) -> JobFile:
     """Build a resumable discovery job directly from command-line branches."""
     if isinstance(target_archives, bool) or int(target_archives) < 1:
@@ -419,11 +459,22 @@ def build_discovery_job(
     if not branches:
         raise RunnerError("--branches requires at least one mathematical branch")
 
+    concept_references = (
+        load_concept_references(concept_reference_path)
+        if concept_reference_path is not None
+        else ()
+    )
+    identity_payload: Dict[str, object] = {
+        "branches": branches,
+        "target_archives": int(target_archives),
+    }
+    if concept_references:
+        identity_payload["concept_references"] = [
+            {"name": name, "source": source}
+            for name, source in concept_references
+        ]
     identity = json.dumps(
-        {
-            "branches": branches,
-            "target_archives": int(target_archives),
-        },
+        identity_payload,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -449,6 +500,7 @@ def build_discovery_job(
         mode="discovery",
         branches=tuple(branches),
         target_archives=int(target_archives),
+        concept_references=concept_references,
     )
 
 
@@ -463,6 +515,10 @@ def _new_state(job: JobFile) -> Dict[str, object]:
         "mode": job.mode,
         "branches": list(job.branches),
         "target_archives": job.target_archives,
+        "concept_references": [
+            {"name": name, "source": source}
+            for name, source in job.concept_references
+        ],
         "discovery_stopped": False,
         "stop_reason": "",
         "status": "pending",
@@ -532,6 +588,12 @@ def load_or_create_state(job: JobFile) -> Dict[str, object]:
             raise RunnerError("state branches do not match the input JSON")
         if int(state.get("target_archives") or 0) != job.target_archives:
             raise RunnerError("state target_archives does not match the input JSON")
+        expected_references = [
+            {"name": name, "source": source}
+            for name, source in job.concept_references
+        ]
+        if list(state.get("concept_references") or []) != expected_references:
+            raise RunnerError("state concept references do not match the discovery input")
         for expected_index, row in enumerate(rows, start=1):
             if not isinstance(row, dict) or int(row.get("index") or 0) != expected_index:
                 raise RunnerError("discovery state contains an invalid object record")
@@ -785,12 +847,10 @@ def register_verification_tool(
     format_specification: str,
     material_context: str,
     discovery_branches: Sequence[str] = (),
-    attempted_names: Sequence[str] = (),
 ) -> None:
     """Register one session-bound acceptance gate under a stable tool name."""
 
     branch_map = {str(item).casefold(): str(item) for item in discovery_branches}
-    attempted_keys = {str(item).casefold() for item in attempted_names}
     discovery_mode = bool(branch_map)
 
     def verify_archive(
@@ -814,8 +874,6 @@ def register_verification_tool(
                 raise ValueError("object_name is required for branch discovery")
             if not selected_branch:
                 raise ValueError("branch must be one of the supplied mathematical branches")
-            if selected_name.casefold() in attempted_keys:
-                raise ValueError("object_name was already attempted: %s" % selected_name)
         else:
             selected_name = object_job.name
             selected_branch = object_job.branch
@@ -1150,6 +1208,29 @@ def _parse_discovery_control(text: str) -> Tuple[str, Dict[str, object]]:
 
 def _render_lines(items: Sequence[str]) -> str:
     return "\n".join("- %s" % item for item in items) if items else "- None."
+
+
+def _render_concept_references(items: Sequence[Tuple[str, str]]) -> str:
+    if not items:
+        return "- None."
+    rendered: List[str] = []
+    for name, source in items:
+        rendered.append("- %s" % name)
+        if source:
+            rendered.append("  Source: %s" % source.replace("\n", "\n  "))
+    return "\n".join(rendered)
+
+
+def _concept_selection_policy(items: Sequence[Tuple[str, str]]) -> str:
+    if not items:
+        return "Choose any suitable distinct object from the supplied mathematical branches."
+    return (
+        "Treat this list as the complete candidate pool, not as a queue. Select only a listed "
+        "concept, using its listed name, and archive it only if it satisfies the selection "
+        "requirements. Never select a previously attempted object or an evident alias of one. "
+        "Skip unsuitable candidates. If no suitable unattempted candidate remains, "
+        "return ARCHIVE_DISCOVERY_STOP. The requested archive count is an upper bound in this mode."
+    )
 
 
 def _attempted_object_names() -> List[str]:
@@ -1635,7 +1716,11 @@ def run_discovery(
     print("Run: %s" % job.key)
     print("State: %s" % job.state_path)
     print("Branches: %s" % ", ".join(job.branches))
-    print("Target successful archives: %s" % job.target_archives)
+    if job.concept_references:
+        print("Candidate concepts: %s" % len(job.concept_references))
+        print("Maximum successful archives: %s" % job.target_archives)
+    else:
+        print("Target successful archives: %s" % job.target_archives)
     print("Live search: %s" % (", ".join(search_tools) if search_tools else "not available"))
 
     def publish_accepted(
@@ -1650,6 +1735,14 @@ def run_discovery(
         branch = branch_map.get(str(verification.get("branch") or "").strip().casefold(), "")
         if not name or not branch:
             raise RunnerError("accepted verification did not bind a valid object name and branch")
+        if job.concept_references:
+            candidate_map = {
+                candidate_name.casefold(): candidate_name
+                for candidate_name, _source in job.concept_references
+            }
+            name = candidate_map.get(name.casefold(), "")
+            if not name:
+                raise RunnerError("verified object is outside the supplied candidate pool")
         row["name"] = name
         row["branch"] = branch
         row["source_urls"] = []
@@ -1718,6 +1811,18 @@ def run_discovery(
             ),
             None,
         )
+        if active is None and job.concept_references:
+            attempted_keys = {name.casefold() for name in _attempted_object_names()}
+            remaining = [
+                name
+                for name, _source in job.concept_references
+                if name.casefold() not in attempted_keys
+            ]
+            if not remaining:
+                state["discovery_stopped"] = True
+                state["stop_reason"] = "No unattempted candidate concepts remain."
+                save_state(job, state)
+                break
         if active is None:
             index = len(rows) + 1
             project_slug = _discovery_project_slug(job, index)
@@ -1811,7 +1916,6 @@ def run_discovery(
             format_specification=format_specification,
             material_context="(No local materials were supplied.)",
             discovery_branches=job.branches,
-            attempted_names=attempted_names,
         )
 
         existing_events = _verification_events(app, shell_state.session_id)
@@ -1827,6 +1931,8 @@ def run_discovery(
             else DISCOVERY_WORKFLOW_PROMPT.format(
                 branches=_render_lines(job.branches),
                 attempted_names=_render_lines(attempted_names),
+                concept_references=_render_concept_references(job.concept_references),
+                selection_policy=_concept_selection_policy(job.concept_references),
                 format_specification=format_specification,
             )
         )
@@ -1869,6 +1975,12 @@ def run_discovery(
 
             if action == "proposal":
                 name = str(control.get("name") or "").strip()
+                if job.concept_references:
+                    candidate_map = {
+                        candidate_name.casefold(): candidate_name
+                        for candidate_name, _source in job.concept_references
+                    }
+                    name = candidate_map.get(name.casefold(), "")
                 branch_map = {branch.casefold(): branch for branch in job.branches}
                 branch = branch_map.get(str(control.get("branch") or "").strip().casefold(), "")
                 if name and branch:
@@ -1979,12 +2091,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--target-archives",
         type=int,
-        help="Number of successfully verified archives to create in branch-discovery mode.",
+        help="Target archive count, or maximum count when --concept-references is used.",
     )
     parser.add_argument(
         "--run-name",
         default="",
         help="Optional stable name for a resumable branch-discovery run.",
+    )
+    parser.add_argument(
+        "--concept-references",
+        metavar="PATH",
+        help="Optional UTF-8 JSON list of concept names and source references for branch discovery.",
     )
     parser.add_argument(
         "--retry-failed",
@@ -2031,10 +2148,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 args.branches,
                 target_archives=int(args.target_archives),
                 run_name=str(args.run_name or ""),
+                concept_reference_path=(
+                    Path(str(args.concept_references))
+                    if args.concept_references
+                    else None
+                ),
             )
         else:
-            if args.target_archives is not None or str(args.run_name or "").strip():
-                raise RunnerError("--target-archives and --run-name are available only with --branches")
+            if (
+                args.target_archives is not None
+                or str(args.run_name or "").strip()
+                or args.concept_references
+            ):
+                raise RunnerError(
+                    "--target-archives, --run-name, and --concept-references are available only with --branches"
+                )
             job = load_job(Path(str(args.input)))
         if job.mode == "queue":
             if int(args.start_index) < 1 or int(args.start_index) > len(job.objects):
@@ -2048,7 +2176,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             else:
                 print("Valid discovery run: %s" % job.key)
                 print("Branches: %s" % ", ".join(job.branches))
-                print("Target successful archives: %s" % job.target_archives)
+                if job.concept_references:
+                    print("Candidate concepts: %s" % len(job.concept_references))
+                    print("Maximum successful archives: %s" % job.target_archives)
+                else:
+                    print("Target successful archives: %s" % job.target_archives)
             print("State path: %s" % job.state_path)
             print("Archive directory: %s" % (TASK_DIR / "archives" / job.key))
             return 0
