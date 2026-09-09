@@ -17,7 +17,7 @@ metadata:
 
 ## Execution Steps
 
-1. Use a named target when one is supplied. Otherwise choose one object from the supplied branches that has a stable mathematical identity, is not a previously attempted object or evident alias, and arose as a direct response to a concrete mathematical problem rather than merely acquiring a later application. Keep this selection internal and continue directly with the archive.
+1. Use a named target when one is supplied. When a candidate pool is supplied, choose only a suitable object from that pool; otherwise choose from the supplied branches. Never select a previously attempted object or an evident alias of one. The object must have a stable mathematical identity and must have arisen as a direct response to a concrete mathematical problem rather than merely acquiring a later application. Keep this selection internal and continue directly with the archive.
 2. Use live search only when necessary to resolve an uncertainty that materially affects object selection or archive accuracy; avoid broad or repeated searches.
 3. Read the active format requirements and the materials supplied in the task context.
 4. In Mathematical Context and Formation, identify the concrete mathematical problem or well-defined problem class that motivated the object. Explain exactly where the difficulty lay, why the available concepts or methods were inadequate, and which ideas or insights led to the object's formation. Connect these points through their mathematical logic rather than listing facts, and keep the account about mathematical meaning rather than a historical story.
