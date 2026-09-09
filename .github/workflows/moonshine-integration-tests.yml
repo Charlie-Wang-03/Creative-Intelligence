@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 env:
-  MOONSHINE_COMMIT: 72a64f8984e0e7e1b0a50f6e53e4d00e4fffbb7d
+  MOONSHINE_COMMIT: af181ed4395ce9901a0e59576fa91c9ec7cfa4c6
 
 jobs:
   moonshine-integration:
@@ -36,10 +36,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install pinned Moonshine runtime
+      - name: Install pinned Moonshine PR 4 runtime
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --no-deps "git+https://github.com/DeepMathLLM/Moonshine.git@${MOONSHINE_COMMIT}"
+          python -m pip install --no-deps "git+https://github.com/Charlie-Wang-03/Moonshine.git@${MOONSHINE_COMMIT}"
 
       - name: Run deterministic Moonshine integration tests
         run: python -m unittest -v tests.integration_run_archive_moonshine
