@@ -70,6 +70,14 @@ This is the primary v2 workflow. Supply one or more mathematical branches, the n
 python Creative-Intelligence/run_archive.py --branches "Differential Geometry" "Algebraic Topology" "Functional Analysis" --target-archives 10 --run-name graduate-math-v2 --stream-output
 ```
 
+To restrict discovery to an optional candidate pool, supply a UTF-8 JSON array whose entries contain `name` and an optional `source`:
+
+```bash
+python Creative-Intelligence/run_archive.py --branches "Differential Geometry" "Functional Analysis" --concept-references Creative-Intelligence/collected-concept-references.json --target-archives 10 --run-name collected-concepts-v1 --stream-output
+```
+
+In this mode, unsuitable candidates may be skipped and `--target-archives` is the maximum number of successful archives. The run stops early when no suitable unattempted candidate remains.
+
 The runner repeatedly performs one complete object task:
 
 1. Select a distinct object from the supplied branches.
