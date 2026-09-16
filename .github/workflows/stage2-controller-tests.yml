@@ -1,0 +1,36 @@
+name: Stage 2 controller regression tests
+
+on:
+  push:
+    paths:
+      - "mathematical-concept-agent/**"
+      - ".github/workflows/stage2-controller-tests.yml"
+  pull_request:
+    paths:
+      - "mathematical-concept-agent/**"
+      - ".github/workflows/stage2-controller-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  unittest:
+    name: ${{ matrix.os }} / Python 3.10
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+
+      - name: Run Stage 2 controller regression tests
+        run: python -m unittest discover -s mathematical-concept-agent/tests -p "test_*.py" -v
