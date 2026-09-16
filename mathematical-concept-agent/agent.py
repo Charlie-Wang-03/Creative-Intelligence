@@ -360,7 +360,6 @@ def _checkpoint_fields(checkpoint):
         "summary": checkpoint.get("summary", ""),
         "next_step": checkpoint.get("next_step", ""),
         "skills_used": list(checkpoint.get("skills_used", [])),
-        "checkpoint": checkpoint,
     }
 
 
