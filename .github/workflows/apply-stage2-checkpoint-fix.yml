@@ -1,0 +1,38 @@
+name: Apply Stage 2 checkpoint fix
+
+on:
+  push:
+    branches:
+      - fix/stage2-crash-safe-checkpoint
+    paths:
+      - ".github/scripts/apply_stage2_checkpoint_fix.py"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v7
+        with:
+          ref: fix/stage2-crash-safe-checkpoint
+
+      - name: Apply deterministic source transformation
+        run: python .github/scripts/apply_stage2_checkpoint_fix.py
+
+      - name: Commit transformed controller
+        shell: bash
+        run: |
+          if git diff --quiet -- mathematical-concept-agent/agent.py; then
+            echo "No controller change produced."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mathematical-concept-agent/agent.py
+          git commit -m "fix: preserve committed Stage 2 checkpoint across interrupted turns"
+          git push origin HEAD:fix/stage2-crash-safe-checkpoint
