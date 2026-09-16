@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["continue", "complete", "blocked"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "skills_used": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next_step": {
+      "type": "string"
+    }
+  },
+  "required": ["status", "summary", "skills_used", "next_step"],
+  "additionalProperties": false
+}
+

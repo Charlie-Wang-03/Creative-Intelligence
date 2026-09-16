@@ -1,0 +1,15 @@
+# Runtime settings for this framework only.
+# agent.py translates these values to temporary `codex -c key=value` arguments.
+# This file is never copied into or written over the user's Codex configuration.
+
+model = "gpt-5.6-sol"
+model_reasoning_effort = "max"
+personality = "pragmatic"
+
+sandbox_mode = "workspace-write"
+approval_policy = "never"
+web_search = "live"
+
+[agents]
+# Enable the capability; the model or an applicable Skill decides whether to use it.
+enabled = true
