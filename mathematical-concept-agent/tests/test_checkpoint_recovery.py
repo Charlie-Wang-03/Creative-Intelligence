@@ -111,10 +111,10 @@ class CrashSafeCheckpointTests(unittest.TestCase):
         ), mock.patch.object(
             AGENT, "execute_turn", side_effect=crash_turn
         ):
-            self._seed_run(Path(directory))
+            self._seed_run(Path(directory), session_id=None)
             self.assertEqual(AGENT.command_run(self._run_args()), 1)
 
-        # Re-open the same durable state as a fresh controller process would.
+            # Re-open the same durable state as a fresh controller process would.
             state_after_crash = AGENT.read_json(AGENT.state_path_for("sample"), {})
             self.assertEqual(state_after_crash["turn"], 3)
             self.assertEqual(state_after_crash["session_id"], "session-new")
@@ -128,7 +128,7 @@ class CrashSafeCheckpointTests(unittest.TestCase):
                 self.assertEqual(AGENT.command_run(self._run_args()), 0)
 
             final_state = AGENT.read_json(AGENT.state_path_for("sample"), {})
-            self.assertEqual(calls, ["session-old", "session-new"])
+            self.assertEqual(calls, [None, "session-new"])
             self.assertEqual(final_state["turn"], 4)
             self.assertEqual(final_state["checkpoint"]["turn"], 4)
             self.assertEqual(final_state["checkpoint"]["status"], "complete")
