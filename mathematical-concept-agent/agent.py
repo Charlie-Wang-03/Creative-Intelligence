@@ -4,6 +4,7 @@
 import argparse
 import ctypes
 import datetime as dt
+import hashlib
 import json
 import os
 import queue
@@ -89,6 +90,14 @@ def read_json(path, default=None):
             return json.load(handle)
     except FileNotFoundError:
         return default
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def parse_config_value(text, line_number):
@@ -300,6 +309,23 @@ def update_state(run_id, **changes):
     state["updated_at"] = utc_now()
     atomic_write_json(path, state)
     return state
+
+
+def _bind_or_validate_problem_identity(run_id, state):
+    """Bind legacy runs once, then reject silent research-problem drift."""
+    problem_path = run_dir_for(run_id) / "problem.md"
+    if not problem_path.is_file():
+        raise RuntimeError("Run '{}' has no research problem file".format(run_id))
+    current = sha256_file(problem_path)
+    expected = state.get("problem_sha256")
+    if expected is None:
+        state = update_state(run_id, problem_sha256=current)
+        return state, current
+    if not isinstance(expected, str) or expected != current:
+        raise RuntimeError(
+            "Run '{}' research problem changed after its identity was bound".format(run_id)
+        )
+    return state, current
 
 
 def _checkpoint_from_state(state):
@@ -914,6 +940,7 @@ def initialize_run(run_id, problem=None, prompt=None):
     else:
         atomic_write_text(run_dir / "problem.md", problem_text)
         source_problem = "<inline prompt>"
+    problem_sha256 = sha256_file(run_dir / "problem.md")
     created_at = utc_now()
     checkpoint = {
         "turn": 0,
@@ -933,6 +960,7 @@ def initialize_run(run_id, problem=None, prompt=None):
             "runner_pid": None,
             "codex_pid": None,
             "source_problem": source_problem,
+            "problem_sha256": problem_sha256,
             "summary": "",
             "next_step": "",
             "skills_used": [],
@@ -990,9 +1018,25 @@ def command_run(args):
     lock = acquire_lock(run_id)
     try:
         state = read_json(state_path_for(run_id), {})
+        state, problem_sha256 = _bind_or_validate_problem_identity(run_id, state)
         checkpoint = _checkpoint_from_state(state)
         session_id = state.get("session_id")
         previous_public_status = state.get("status", checkpoint["status"])
+        pending_attempt = state.get("attempt")
+        if isinstance(pending_attempt, dict):
+            pending_problem_sha256 = pending_attempt.get("problem_sha256")
+            if pending_problem_sha256 and pending_problem_sha256 != problem_sha256:
+                raise RuntimeError(
+                    "Pending attempt problem identity does not match the current run"
+                )
+            if (
+                continuation_prompt is None
+                and pending_attempt.get("status") in {"failed", "interrupted"}
+                and int(pending_attempt.get("turn", 0)) == int(checkpoint["turn"]) + 1
+            ):
+                saved_continuation = pending_attempt.get("continuation_prompt")
+                if isinstance(saved_continuation, str) and saved_continuation.strip():
+                    continuation_prompt = saved_continuation.strip()
 
         # Upgrade legacy state lazily. Runtime status may change while the
         # checkpoint fields stay pinned to the last accepted research result.
@@ -1018,7 +1062,8 @@ def command_run(args):
 
             previous_public_status = state.get("status", checkpoint["status"])
             attempt_turn = int(checkpoint["turn"]) + 1
-            prompt = render_prompt(run_id, continuation_prompt=continuation_prompt)
+            attempt_continuation = continuation_prompt
+            prompt = render_prompt(run_id, continuation_prompt=attempt_continuation)
             continuation_prompt = None
             command = build_codex_command(session_id, prompt)
             attempt = {
@@ -1026,6 +1071,8 @@ def command_run(args):
                 "status": "starting",
                 "runner_pid": os.getpid(),
                 "codex_pid": None,
+                "problem_sha256": problem_sha256,
+                "continuation_prompt": attempt_continuation,
                 "started_at": utc_now(),
             }
             state = update_state(
