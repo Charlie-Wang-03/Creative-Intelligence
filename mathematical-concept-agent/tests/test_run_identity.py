@@ -123,6 +123,35 @@ class DurableRunIntentTests(unittest.TestCase):
                 "Inspect the boundary case",
             )
 
+    def test_legacy_run_adopts_current_problem_identity_once(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            AGENT, "ROOT", Path(directory)
+        ), mock.patch.object(
+            AGENT, "build_codex_command", return_value=["codex"]
+        ), mock.patch.object(
+            AGENT,
+            "execute_turn",
+            return_value=(0, None, "session-1", "ordinary response"),
+        ):
+            AGENT.initialize_run("sample", prompt="Original research problem")
+            state = AGENT.read_json(AGENT.state_path_for("sample"), {})
+            state.pop("problem_sha256", None)
+            AGENT.atomic_write_json(AGENT.state_path_for("sample"), state)
+
+            self.assertEqual(AGENT.command_run(self._args()), 0)
+            adopted = AGENT.read_json(AGENT.state_path_for("sample"), {})
+            self.assertTrue(adopted.get("problem_sha256"))
+            self.assertEqual(
+                adopted["problem_sha256"],
+                AGENT.sha256_file(AGENT.run_dir_for("sample") / "problem.md"),
+            )
+
+            (AGENT.run_dir_for("sample") / "problem.md").write_text(
+                "Tampered after adoption\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(RuntimeError, "problem.*changed|problem.*identity"):
+                AGENT.command_run(self._args())
+
     def test_explicit_new_continuation_overrides_failed_pending_intent(self):
         prompts = []
 
