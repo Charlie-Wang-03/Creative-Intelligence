@@ -96,6 +96,26 @@ research result advances `checkpoint`.
 This is a controller-level recovery guarantee, not exactly-once execution of a
 Codex turn or of external side effects performed by tools inside that turn.
 
+## Durable run and attempt identity
+
+For new runs, the controller records the SHA-256 of the copied `problem.md` and
+checks it again before every Codex turn. This makes the original research task a
+durable run-identity contract: a manual edit, tool edit, or other silent change
+to the problem file is rejected before resume instead of changing the task under
+an existing Codex session. Legacy runs bind their current problem file the first
+time they are resumed under this controller version, then receive the same
+forward protection.
+
+A one-turn continuation instruction is also part of the in-flight attempt. If a
+Codex attempt fails or the controller is interrupted before committing a
+structured result, restarting the run without a new `--prompt` reuses that
+uncommitted instruction. Supplying a new `--prompt` explicitly replaces the
+pending continuation intent.
+
+The problem hash is checked at the controller boundary; it is not an operating-
+system file lock or immutable filesystem snapshot. A concurrent writer that
+changes the file after validation is outside this guarantee.
+
 ## Configuration and research contract
 
 `config.toml` contains invocation-only Codex overrides. `agent.py` translates
