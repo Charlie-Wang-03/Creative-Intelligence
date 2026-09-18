@@ -28,6 +28,9 @@ jobs:
           - name: Ubuntu / Python 3.10 / crash recovery contract
             os: ubuntu-latest
             pattern: "test_checkpoint_recovery.py"
+          - name: Ubuntu / Python 3.10 / run identity contract
+            os: ubuntu-latest
+            pattern: "test_run_identity.py"
 
     env:
       # Command-construction tests only require a resolvable executable path;
